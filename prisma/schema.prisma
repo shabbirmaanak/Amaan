@@ -1,0 +1,248 @@
+// Ashara Safety Tag — data model
+// Postgres (Supabase-compatible). See README for local dev setup.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AgeGroup {
+  CHILD
+  ADULT
+  ELDER
+}
+
+enum PersonStatus {
+  ACTIVE
+  LOST
+  REUNITED
+}
+
+enum TagStatus {
+  ACTIVE
+  LOST
+  EXPIRED
+}
+
+enum VolunteerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ScanRole {
+  FINDER
+  VOLUNTEER
+  ADMIN
+}
+
+enum CaseStatus {
+  FOUND
+  FAMILY_NOTIFIED
+  REUNITED
+}
+
+enum OtpPurpose {
+  GUARDIAN_LOGIN
+  VOLUNTEER_LOGIN
+  ADMIN_LOGIN
+}
+
+enum EventStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+}
+
+model Event {
+  id             String      @id @default(uuid())
+  name           String
+  startAt        DateTime
+  endAt          DateTime
+  helpDeskNumber String
+  status         EventStatus @default(DRAFT)
+  createdAt      DateTime    @default(now())
+
+  meetPoints  MeetPoint[]
+  people      Person[]
+  tags        Tag[]
+  volunteers  Volunteer[]
+
+  @@index([status])
+}
+
+model MeetPoint {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+
+  scanLogs  ScanLog[]
+
+  @@index([eventId])
+}
+
+model Guardian {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  name      String
+  consentAt DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  people Person[]
+}
+
+model Person {
+  id            String       @id @default(uuid())
+  eventId       String
+  event         Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  guardianId    String
+  guardian      Guardian     @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  firstName     String
+  photoUrl      String?
+  ageGroup      AgeGroup
+  languages     String[]     @default([])
+  medicalNotes  String?
+  status        PersonStatus @default(ACTIVE)
+  createdAt     DateTime     @default(now())
+  deletedAt     DateTime?
+
+  backupContacts BackupContact[]
+  tags           Tag[]
+  cases          Case[]
+
+  @@index([eventId])
+  @@index([guardianId])
+}
+
+model BackupContact {
+  id       String @id @default(uuid())
+  personId String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+  name     String
+  phone    String
+  order    Int
+
+  @@index([personId])
+  @@unique([personId, order])
+}
+
+model Tag {
+  id        String    @id @default(uuid())
+  shortCode String    @unique
+  personId  String
+  person    Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+  eventId   String
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status    TagStatus @default(ACTIVE)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  scanLogs  ScanLog[]
+  cases     Case[]
+
+  @@index([eventId])
+  @@index([shortCode])
+}
+
+model Volunteer {
+  id        String          @id @default(uuid())
+  phone     String          @unique
+  name      String
+  eventId   String
+  event     Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status    VolunteerStatus @default(PENDING)
+  createdAt DateTime        @default(now())
+
+  scanLogs ScanLog[]
+
+  @@index([eventId])
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+}
+
+model ScanLog {
+  id          String    @id @default(uuid())
+  tagId       String
+  tag         Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  role        ScanRole
+  volunteerId String?
+  volunteer   Volunteer? @relation(fields: [volunteerId], references: [id], onDelete: SetNull)
+  meetPointId String?
+  meetPoint   MeetPoint? @relation(fields: [meetPointId], references: [id], onDelete: SetNull)
+  ip          String?
+  createdAt   DateTime  @default(now())
+
+  @@index([tagId])
+  @@index([createdAt])
+  @@index([ip, createdAt])
+}
+
+model Case {
+  id         String       @id @default(uuid())
+  personId   String
+  person     Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  tagId      String
+  tag        Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  status     CaseStatus   @default(FOUND)
+  createdAt  DateTime     @default(now())
+  resolvedAt DateTime?
+
+  events CaseEvent[]
+
+  @@index([personId])
+  @@index([status])
+}
+
+model CaseEvent {
+  id        String     @id @default(uuid())
+  caseId    String
+  case      Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  status    CaseStatus
+  note      String?
+  createdAt DateTime   @default(now())
+
+  @@index([caseId])
+}
+
+model OtpCode {
+  id         String     @id @default(uuid())
+  phone      String
+  codeHash   String
+  purpose    OtpPurpose
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int        @default(0)
+  createdAt  DateTime   @default(now())
+
+  @@index([phone, purpose])
+}
+
+model RateLimitHit {
+  id        String   @id @default(uuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+model NotifyLog {
+  id        String   @id @default(uuid())
+  tagId     String
+  channel   String
+  toMasked  String
+  status    String
+  createdAt DateTime @default(now())
+
+  @@index([tagId, createdAt])
+}
